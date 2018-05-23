@@ -2,16 +2,21 @@ require 'pathname'
 
 module Creek
   class Creek::Drawing
+    include Creek::Utils
+
     COLUMNS = ('A'..'AZ').to_a
 
     def initialize(book, drawing_filepath)
       @book = book
       @drawing_filepath = drawing_filepath
       @drawings = []
+      @drawings_rels = []
       @images_pathnames = Hash.new { |hash, key| hash[key] = [] }
 
-      load_drawings
-      load_images_pathnames_by_cells if has_images?
+      if file_exist?(@drawing_filepath)
+        load_drawings_and_rels
+        load_images_pathnames_by_cells if has_images?
+      end
     end
 
     ##
@@ -41,15 +46,6 @@ module Creek
 
     private
 
-    #
-    # Document representing drawing file
-    #
-    # @return [Creek::Document] drawing file
-    #
-    def document
-      @document ||= Document.new(@book, @drawing_filepath)
-    end
-
     ##
     # Transforms cell name to [row, col], e.g. A1 => [0, 0], B3 => [1, 2]
     # Rows and cols start with 0.
@@ -69,8 +65,10 @@ module Creek
     # Parses drawing and drawing's relationships xmls.
     # Drawing xml contains relationships ID's and coordinates (row, col).
     # Drawing relationships xml contains images' locations.
-    def load_drawings
-      @drawings = document.xml ? document.css(['twoCellAnchor']) : []
+    def load_drawings_and_rels
+      @drawings = parse_xml(@drawing_filepath).css('xdr|twoCellAnchor')
+      drawing_rels_filepath = expand_to_rels_path(@drawing_filepath)
+      @drawings_rels = parse_xml(drawing_rels_filepath).css('Relationships')
     end
 
     ##
@@ -85,6 +83,8 @@ module Creek
       col_to_selector = 'xdr:to/xdr:col'.freeze
 
       @drawings.xpath('//xdr:twoCellAnchor').each do |drawing|
+	next if drawing.xpath(image_selector).first.nil?
+
         embed = drawing.xpath(image_selector).first.attributes['embed']
         next if embed.nil?
 
@@ -105,7 +105,7 @@ module Creek
     end
 
     def extract_drawing_path(rid)
-      document.relationships.css("Relationship[@Id=#{rid}]").first.attributes['Target'].value
+      @drawings_rels.css("Relationship[@Id=#{rid}]").first.attributes['Target'].value
     end
   end
 end
